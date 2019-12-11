@@ -85,32 +85,24 @@ A solution would be to use a tool like `Serf`, offering cluster membership, fail
 
 We think that it is not actually possible to run an additional management process beside the container main process. Our Docker containers are not capable of running multiple processes, making it hard to centralize the logs in one place.
 
+Like said on this [docker docs page](https://docs.docker.com/config/containers/multi-service_container/), there are a few different ways to accomplish this :
+
+* Put all the commands in a wrapper script and run it as `CMD` in the Dockerfile
+* **Use a process manager** like `supervisord`
 
 
-> **[M6]** In our current solution, although the load balancer configuration is changing dynamically, it doesn't follow dynamically the configuration of our distributed system when
-> web servers are added or removed. If we take a closer look at the `run.sh` script, we see two calls to `sed` which will replace two lines in the `haproxy.cfg` configuration file just before we start `haproxy`. You clearly see that the configuration file has two lines and the script will replace these two lines.
->
-> What happens if we add more web server nodes? Do you think it is really dynamic? It's far away from being a dynamic configuration. Can you propose a solution to solve this?
 
-...
+> **[M6]** In our current solution, although the load balancer configuration is changing dynamically, it doesn't follow dynamically the configuration of our distributed system when web servers are added or removed. If we take a closer look at the `run.sh` script, we see two calls to `sed` which will replace two lines in the `haproxy.cfg` configuration file just before we start `haproxy`. You clearly see that the configuration file has two lines and the script will replace these two lines.
+> 
+>What happens if we add more web server nodes? Do you think it is really dynamic? It's far away from being a dynamic configuration. Can you propose a solution to solve this?
+
+The load balancer doesn't know when a configuration changes or when a node goes online/offline. A new node could replace a crashed node and the load balancer would not know it.
+
+Like said before, there are solutions like `Serf` to maintain cluster membership lists and execute custom handler scripts when that membership changes. For example, `Serf` can maintain the list of web servers for a load balancer and notify that load balancer whenever a node comes online or goes offline.
+
+
 
 #### Install the tools
-
-> In this part of the task you will set up Docker-compose with Docker
-  containers like in the previous lab. The Docker images are a little
-  bit different from the previous lab and we will work with these
-  images during this lab.
-
-You should have installed Docker-compose already in the previous lab. If not,
-download and install from:
-
-* [Docker](https://www.docker.com/)
-* [Docker compose](https://docs.docker.com/compose/)
-
-Fork the following repository and then clone the fork to your machine:
-<https://github.com/SoftEng-HEIGVD/Teaching-HEIGVD-AIT-2015-Labo-Docker>
-
-To fork the repo, just click on the `Fork` button in the GitHub interface.
 
 Once you have installed everything, start the Docker compose from the
 project folder with the following command:
