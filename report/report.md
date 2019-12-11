@@ -69,15 +69,21 @@ Actually, it is impossible to add a new web application server dynamically.
 
 The solution would be to allow HAProxy to include a new node when a new server is available. Practically, when a new web application container would be created, it could send the load balancer a message saying that it is available and ready to be used as a node.
 
+
+
 > **[M4]** You probably noticed that the list of web application nodes is hardcoded in the load balancer configuration. How can we manage the web app nodes in a more dynamic fashion?
 
 A solution would be to use a tool like `Serf`, offering cluster membership, failure detection and orchestration. The load balancer could benefit from an efficient lightweight `gossip protocol` to communicate with nodes and exchange messages periodically.
+
+
 
 > **[M5]** In the physical or virtual machines of a typical infrastructure we tend to have not only one main process (like the web server or the load balancer) running, but a few additional processes on the side to perform management tasks.
 >
 > For example to monitor the distributed system as a whole it is common to collect in one centralized place all the logs produced by the different machines. Therefore we need a process running on each machine that will forward the logs to the central place. (We could also imagine a central tool that reaches out to each machine to gather the logs. That's a push vs. pull problem.) It is quite common to see a push mechanism used for this kind of task. 
 >
 > Do you think our current solution is able to run additional management processes beside the main web server / load balancer process in a container? If no, what is missing / required to reach the goal? If yes, how to proceed to run for example a log forwarding process?
+
+We think that it is not actually possible to run an additional management process beside the container main process. Our Docker containers are not capable of running multiple processes, making it hard to centralize the logs in one place.
 
 
 
