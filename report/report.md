@@ -19,6 +19,8 @@ tools and services to achieve the same kind of behavior.
 
 The solution is not suitable for a real production environment likely to receive a high number of requests. If the load balancer container crashes, there is no backup solution : next requests will fail to reach one of the servers.
 
+
+
 > **[M2]** Describe what you need to do to add new `webapp` container to the infrastructure. Give the exact steps of what you have to do without modifying the way the things are done. Hint: You probably have to modify some configuration and script files in a Docker image.
 
 `webapp1` and `webapp2` are docker containers, coming from the same docker image and using the same `Dockerfile` (located in `/webapp`). They are both defined in the file `docker-compose.yml`.
@@ -59,26 +61,21 @@ WEBAPP_3_IP=192.168.42.33
 server s3 ${WEBAPP_3_IP}:3000 check
 ```
 
-4. Finally, since HAProxy container calls `/ha/scripts/run.sh` on startup to update each server IP inside of it, the following line must be added in the script.
-
-```bash
-sed -i 's/<s3>/$S3_PORT_3000_TCP_ADDR/g' /usr/local/etc/haproxy/haproxy.cfg
-```
-
 
 
 > **[M3]** Based on your previous answers, you have detected some issues in the current solution. Now propose a better approach at a high level.
 
-...
+Actually, it is impossible to add a new web application server dynamically.
+
+The solution would be to allow HAProxy to include a new node when a new server is available. Practically, when a new web application container would be created, it could send the load balancer a message saying that it is available and ready to be used as a node.
 
 > **[M4]** You probably noticed that the list of web application nodes is hardcoded in the load balancer configuration. How can we manage the web app nodes in a more dynamic fashion?
 
-...
+A solution would be to use a tool like `Serf`, offering cluster membership, failure detection and orchestration. The load balancer could benefit from an efficient lightweight `gossip protocol` to communicate with nodes and exchange messages periodically.
 
 > **[M5]** In the physical or virtual machines of a typical infrastructure we tend to have not only one main process (like the web server or the load balancer) running, but a few additional processes on the side to perform management tasks.
 >
-> For example to monitor the distributed system as a whole it is common to collect in one centralized place all the logs produced by the different machines. Therefore we need a process running on each machine that will forward the logs to the central place. (We could
-> also imagine a central tool that reaches out to each machine to gather the logs. That's a push vs. pull problem.) It is quite common to see a push mechanism used for this kind of task. 
+> For example to monitor the distributed system as a whole it is common to collect in one centralized place all the logs produced by the different machines. Therefore we need a process running on each machine that will forward the logs to the central place. (We could also imagine a central tool that reaches out to each machine to gather the logs. That's a push vs. pull problem.) It is quite common to see a push mechanism used for this kind of task. 
 >
 > Do you think our current solution is able to run additional management processes beside the main web server / load balancer process in a container? If no, what is missing / required to reach the goal? If yes, how to proceed to run for example a log forwarding process?
 
