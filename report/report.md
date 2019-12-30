@@ -109,7 +109,11 @@ Like said before, there are solutions like `Serf` to maintain cluster membership
 1. Take a screenshot of the stats page of HAProxy at
    <http://192.168.42.42:1936>. You should see your backend nodes.
 
+   ![managementInterface](../img/0_1.png)
+   
 2. Give the URL of your repository URL in the lab report.
+
+[https://github.com/Tsimwi/Teaching-HEIGVD-AIT-2019-Labo-Docker](
 
 
 ### Task 1: Add a process supervisor to run several processes
@@ -364,11 +368,22 @@ content as in the previous task.
    <http://192.168.42.42:1936>. You should see your backend nodes. It
    should be really similar to the screenshot of the previous task.
 
-2. Describe your difficulties for this task and your understanding of
+![ManagementInterface](../img/1_1.png)
+
+1. Describe your difficulties for this task and your understanding of
    what is happening during this task. Explain in your own words why
    are we installing a process supervisor. Do not hesitate to do more
    research and to find more articles on that topic to illustrate the
    problem.
+
+> We install a supervisor because we want to run multiple process on the same container, but the mantra of Docker is "one process per container" so we need to find a way to bypass this behaviors. To do that we use a supervisor, it will be the process with the pid 1. He will be responsible to launch other process.
+>
+> 
+>
+> ![ManagementInterface](../img/1_2.png)
+>
+> On this image we can see that systemd start right after the kernel and manage other services.
+
 
 
 ### Task 2: Add a tool to manage membership in the web server cluster
