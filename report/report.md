@@ -118,250 +118,6 @@ Like said before, there are solutions like `Serf` to maintain cluster membership
 
 ### Task 1: Add a process supervisor to run several processes
 
-> In this task, we will learn to install a process supervisor that
-  will help us to solve the issue presented in the question
-  [M5](#M5). Installing a process supervisor gives us the ability to
-  run multiple processes at the same time in a Docker environment.
-
-A central tenet of the Docker design is the following principle (which
-for some people is a big limitation):
-
-  > One process per container
-
-This means that the designers of Docker assumed that in the normal
-case there is only a single process running inside a container. They
-designed everything around this principle. Consequently they decided
-that that a container is running only if there is a foreground process
-running. When the foreground process stops, the container
-automatically stops as well.
-
-When you normally run server software like Nginx or Apache, which are
-designed to be run as daemons, you run a command to start them. The
-command is a foreground process. What happens usually is that this
-process then forks a background process (the daemon) and exits. Thus
-when you run the command in a container the process starts and right
-after stops and your container stops, too.
-
-To avoid this behavior, you need to start your foreground process with
-an option to avoid the process to fork a daemon, but continue running
-in foreground. In fact, HAProxy starts by default in this "no daemon"
-mode.
-
-So, the question is now, how can we run multiple processes inside one
-container? The answer involves using an _init system_. An init system
-is usually part of an operating system where it manages deamons and
-coordinates the boot process. There are many different init systems,
-like _init.d_, _systemd_ and _Upstart_. Sometimes they are also called
-_process supervisors_.
-
-In this lab, we will use a small init system called `S6`
-<http://skarnet.org/software/s6/>.  And more specifically, we will use
-the `s6-overlay` scripts
-<https://github.com/just-containers/s6-overlay> which simplify the use
-of `S6` in our containers. For more details about the features, see
-<https://github.com/just-containers/s6-overlay#features>.
-
-Is this in line with the Docker philosophy? You have a good
-explanation of the `s6-overlay` maintainers' viewpoint here:
-<https://github.com/just-containers/s6-overlay#the-docker-way>
-
-The use of a process supervisor will give us the possibility to run
-one or more processes at a time in a Docker container. That's just
-what we need.
-
-So to add it to your images, you will find `TODO: [S6] Install`
-placeholders in the Docker images of [HAProxy](ha/Dockerfile#L11) and
-the [web application](webapp/Dockerfile#L16)
-
-Replace the `TODO: [S6] Install` with the following Docker
-instruction:
-
-```
-# Download and install S6 overlay
-RUN curl -sSLo /tmp/s6.tar.gz https://github.com/just-containers/s6-overlay/releases/download/v1.17.2.0/s6-overlay-amd64.tar.gz \
-  && tar xzf /tmp/s6.tar.gz -C / \
-  && rm -f /tmp/s6.tar.gz
-```
-
-Take the opportunity to change the `MAINTAINER` of the image by your
-name and email.  Replace in both Docker files the `TODO: [GEN] Replace
-with your name and email`.
-
-To build your images, run the following commands
-VM instance:
-
-```bash
-# Build the haproxy image
-cd /ha
-docker build -t <imageName> .
-
-# Build the webapp image
-cd /webapp
-docker build -t <imageName> .
-```
-
-**References**:
-
-  - [RUN](https://docs.docker.com/engine/reference/builder/#/run)
-  - [docker build](https://docs.docker.com/engine/reference/commandline/build/)
-
-**Remarks**:
-
-  - If you run your containers right now, you will notice that there
-    is no difference from the previous state of our images. That is
-    normal as we do not have configured anything for `S6` and we do
-    not start it in the container.
-
-To start the containers, first you need to stop the current containers and remove
-them. You can do that with the following commands:
-
-```bash
-# Stop and force to remove the containers
-docker rm -f s1 s2 ha
-
-# Start the containers
-docker-compose up --build
-```
-
-You can check the state of your containers as we already did it in
-previous task with `docker ps` which should produce an output similar
-to the following:
-
-```
-CONTAINER ID        IMAGE                  COMMAND             CREATED             STATUS              PORTS                                                                NAMES
-2b277f0fe8da        softengheigvd/ha       "./run.sh"          21 seconds ago      Up 20 seconds       0.0.0.0:80->80/tcp, 0.0.0.0:1936->1936/tcp, 0.0.0.0:9999->9999/tcp   ha
-0c7d8ff6562f        softengheigvd/webapp   "./run.sh"          22 seconds ago      Up 21 seconds       3000/tcp                                                             s2
-d9a4aa8da49d        softengheigvd/webapp   "./run.sh"          22 seconds ago      Up 21 seconds       3000/tcp                                                             s1
-```
-
-**Remarks**:
-
-  - Later in this lab, the two scripts `start-containers.sh` and `build-images.sh`
-    will be less relevant. During this lab, we will build and run extensively the `ha`
-    proxy image. Become familiar with the docker `build` and `run` commands.
-
-**References**:
-
-  - [docker ps](https://docs.docker.com/engine/reference/commandline/ps/)
-  - [docker run](https://docs.docker.com/engine/reference/commandline/run/)
-  - [docker rm](https://docs.docker.com/engine/reference/commandline/rm/)
-
-We need to configure `S6` as our main process and then replace the
-current one. For that we will update our Docker images
-[HAProxy](ha/Dockerfile#L47) and the
-[web application](webapp/Dockerfile#L38) and replace the: `TODO: [S6]
-Replace the following instruction` by the following Docker
-instruction:
-
-```
-# This will start S6 as our main process in our container
-ENTRYPOINT ["/init"]
-```
-
-**References**:
-
-  - [ENTRYPOINT](https://docs.docker.com/engine/reference/builder/#/entrypoint)
-
-You can build and run the updated images (use the commands already
-provided earlier).  As you can observe if you try to go to
-http://192.168.42.42, there is nothing live.
-
-It's the expected behavior for now as we just replaced the application
-process by the process supervisor one. We have a superb process
-supervisor up and running but no more application.
-
-To remedy to this situation, we will prepare the starting scripts for
-`S6` and copy them at the right place. Once we do this, they will be
-automatically taken into account and our applications will be
-available again.
-
-Let's start by creating a folder called `service` in `ha` and `webapp`
-folders. You can use the above commands :
-
-```bash
-mkdir -p /ha/services/ha /webapp/services/node
-```
-
-You should have the following folder structure:
-
-```
-|-- Root directory
-  |-- ha
-    |-- config
-    |-- scripts
-    |-- services
-      |-- ha
-    |-- Dockerfile
-  |-- webapp
-    |-- app
-    |-- services
-      |-- node
-    |-- .dockerignore
-    |-- Dockerfile
-    |-- run.sh
-```
-
-We need to copy the `run.sh` scripts as `run` files in the service
-directories.  You can achieve that by the following commands :
-
-```bash
-cp /ha/scripts/run.sh /ha/services/ha/run && chmod +x /ha/services/ha/run
-cp /webapp/scripts/run.sh /webapp/services/node/run && chmod +x /webapp/services/node/run
-```
-
-Once copied, replace the hashbang instruction in both files. Replace
-the first line of the `run` script
-
-```bash
-#!/bin/sh
-```
-by:
-
-```bash
-#!/usr/bin/with-contenv bash
-```
-
-This will instruct `S6` to give the environment variables from the
-container to the run script.
-
-The start scripts are ready but now we must copy them to the right
-place in the Docker image. In both `ha` and `webapp` Docker files, you
-need to add a `COPY` instruction to setup the service correctly.
-
-In `ha` Docker file, you need to replace: `TODO: [S6] Replace the two
-following instructions` by
-
-```
-# Copy the S6 service and make the run script executable
-COPY services/ha /etc/services.d/ha
-RUN chmod +x /etc/services.d/ha/run
-```
-
-Do the same in the `webapp`Docker file with the following replacement:
-`TODO: [S6] Replace the two following instructions` by
-
-```
-# Copy the S6 service and make the run script executable
-COPY services/node /etc/services.d/node
-RUN chmod +x /etc/services.d/node/run
-```
-
-**References**:
-
-  - [COPY](https://docs.docker.com/engine/reference/builder/#/copy)
-  - [RUN](https://docs.docker.com/engine/reference/builder/#/run)
-
-**Remarks**:
-
-  - We can discuss if is is really necessary to do `RUN chmod +x ...` in the
-    image creation as we already created the `run` files with `+x` rights. Doing
-    so make sure that we will never have issue with copy/paste of the file or
-    transferring between unix world and windows world.
-
-Build again your images and run them. If everything is working fine,
-you should be able to open http://192.168.42.42 and see the same
-content as in the previous task.
-
 **Deliverables**:
 
 1. Take a screenshot of the stats page of HAProxy at
@@ -402,11 +158,11 @@ content as in the previous task.
 >        |-- ...
 >    ```
 
-See `logs/task1`.
+See `logs/task2`.
 
 > 2. Give the answer to the question about the existing problem with the current solution.
 
-???
+We think that the problem is 
 
 > 3. Give an explanation on how `Serf` is working. Read the official website to get more details about the `GOSSIP` protocol used in `Serf`. Try to find other solutions that can be used to solve similar situations where we need some auto-discovery mechanism.
 
@@ -418,829 +174,200 @@ Gossip is done at regular intervals, ensuring constant network usage. Failure de
 
 If a failing node is discovered, random other nodes are asked to probe the failing node, in case there where network issues with the first node. A failing node first become *suspicious* before being considered *dead*, and all these state changes are gossiped to the cluster.
 
-There are other *auto-discovery* mechanisms. Like DHCP requests, we can...
-
 For example, in the [NeighbourCast](http://www.actapress.com/PDFViewer.aspx?paperId=31994) algorithm, instead of talking to random nodes, information is spread by talking only to neighbouring nodes.
 
-state-machine ? paxos algo ?
+There is also Consul that works like Serf. [Consul](https://www.consul.io) is a tool for service discovery and configuration. It provides high level features such as service discovery, health checking and key/value storage. It makes use of a group of strongly consistent servers to manage the datacenter.
 
 ### Task 3: React to membership changes
 
-> Serf is really simple to use as it lets the user write their own shell scripts to react to the cluster events. In this task we will write the first bits and pieces of the handler scripts we need to build our solution.
-  We will start by just logging members that join the cluster and the members that leave the cluster. We are preparing to solve concretely the issue discovered in [M4](#M4).
+**Deliverables**:
 
-We reached a state where we have nearly all the pieces in place to make the infrastructure
-really dynamic. At the moment, we are missing the scripts that will react to the events
-reported by `Serf`, namely member `leave` or member `join`.
+> 1. Provide the docker log output for each of the containers:  `ha`, `s1` and `s2`.
+>    Put your logs in the `logs` directory you created in the previous task.
 
-We will start by creating the scripts in [ha/scripts](ha/scripts). So create two files in
-this directory and set them as executable. You can use these commands:
+[ha startup](../logs/task3/ha_startup)
 
-```bash
-touch /ha/scripts/member-join.sh && chmod +x /ha/scripts/member-join.sh
-touch /ha/scripts/member-leave.sh && chmod +x /ha/scripts/member-leave.sh
-```
+[s1 when it join the cluster](../logs/task3/s1_after_join)
 
-In the `member-join.sh` script, put the following content:
+[ha after that s1 join](../logs/task3/ha_after_s1_join)
 
-```bash
-#!/usr/bin/env bash
+[s2 when it join the cluster](../logs/task3/s2_after_join)
 
-echo "Member join script triggered" >> /var/log/serf.log
+[ha after that s2 join the cluster](../logs/task3/ha_after_s1_and_s2_join)
 
-# We iterate over stdin
-while read -a values; do
-  # We extract the hostname, the ip, the role of each line and the tags
-  HOSTNAME=${values[0]}
-  HOSTIP=${values[1]}
-  HOSTROLE=${values[2]}
-  HOSTTAGS=${values[3]}
+[s1 after that s2 join the cluster](../logs/task3/s1_after_s2_join)
 
-  echo "Member join event received from: $HOSTNAME with role $HOSTROLE" >> /var/log/serf.log
-done
-```
+> 2. Provide the logs from the `ha` container gathered directly from the `/var/log/serf.log`
+>    file present in the container. Put the logs in the `logs` directory in your repo.
 
-Do the same for the `member-leave.sh` with the following content:
+[Serf cluster logs](../logs/task3/ha_serf_logs)
 
-```bash
-#!/usr/bin/env bash
 
-echo "Member leave/join script triggered" >> /var/log/serf.log
-
-# We iterate over stdin
-while read -a values; do
-  # We extract the hostname, the ip, the role of each line and the tags
-  HOSTNAME=${values[0]}
-  HOSTIP=${values[1]}
-  HOSTROLE=${values[2]}
-  HOSTTAGS=${values[3]}
-
-  echo "Member $SERF_EVENT event received from: $HOSTNAME with role $HOSTROLE" >> /var/log/serf.log
-done
-```
-
-We have to update our Docker file for `ha` node. Replace the
-`TODO: [Serf] Copy events handler scripts` with appropriate content to:
-
-  1. Make sure there is a directory `/serf-handlers`.
-  2. The `member-join` and `member-leave` scripts are placed in this folder.
-  3. Both of the scripts are executable.
-
-Stop all your containers to have a fresh state:
-
-```bash
-docker rm -f ha s1 s2
-```
-
-Now, build your `ha` image:
-
-```bash
-# Build the haproxy image
-cd /ha
-docker build -t <imageName> .
-```
-
-From now on, we will ask you to systematically keep the logs and copy
-them into your repository as a lab deliverable.  Whenever you see the
-notice (**keep logs**) after a command, copy the logs into the
-repository.
-
-Run the `ha` container first and capture the logs with `docker logs` (**keep the logs**).
-
-```bash
-docker run -d -p 80:80 -p 1936:1936 -p 9999:9999 --network heig --name ha <imageName>
-```
-
-Now, run one of the two backend containers and capture the logs (**keep the logs**). Shortly after
-starting the container capture also the logs of the `ha` node (**keep the logs**).
-
-```bash
-docker run -d --network heig --name s1 <imageName>
-docker run -d --network heig --name s2 <imageName>
-```
-
-**Remarks**:
-
-  - You probably noticed that we removed the `links` to container `s1` and `s2`.
-    The reason is that we will not rely on that mechanism for the next steps. For
-    the moment the communication between the reverse proxy and the backend
-    nodes is broken.
-
-Once started, get the logs (**keep the logs**) of the backend container.
-
-To check there is something happening on the node `ha` you will need to connect
-to the running container to gather the custom log file that is created in the
-handler scripts. For that, use the following command to connect to `ha`
-container in interactive mode.
-
-```bash
-docker exec -ti ha /bin/bash
-```
-
-**References**:
-
-  - [docker exec](https://docs.docker.com/engine/reference/commandline/exec/)
-
-Once done, you can simply run the following command. This command is run inside
-the running `ha` container. (**keep the logs**)
-
-```bash
-cat /var/log/serf.log
-```
-
-Once you have finished, you have simply to type `exit` in the container to quit
-your shell session and at the same time the container. The container itself will
-continue to run.
+### Task 4: Use a template engine to easily generate configuration files
 
 **Deliverables**:
 
-1. Provide the docker log output for each of the containers:  `ha`, `s1` and `s2`.
-   Put your logs in the `logs` directory you created in the previous task.
+> 1. You probably noticed when we added `xz-utils`, we have to rebuild
+>    the whole image which took some time. What can we do to mitigate
+>    that? Take a look at the Docker documentation on
+>    [image layers](https://docs.docker.com/engine/userguide/storagedriver/imagesandcontainers/#images-and-layers).
+>    Tell us about the pros and cons to merge as much as possible of the
+>    command. In other words, compare:
+>
+> ```
+> RUN command 1
+> RUN command 2
+> RUN command 3
+> ```
+>
+> vs.
+>
+> ```
+> RUN command 1 && command 2 && command 3
+> ```
+>
+> There are also some articles about techniques to reduce the image
+>   size. Try to find them. They are talking about `squashing` or
+>   `flattening` images.
 
-3. Provide the logs from the `ha` container gathered directly from the `/var/log/serf.log`
-   file present in the container. Put the logs in the `logs` directory in your repo.
+A Docker image is built up from a series of layers. Each layer represents an instruction in the image’s Dockerfile. Each layer except the very last one is read-only. Each layer is only a set of differences from the layer before it. The layers are stacked on top of each other. When you create a new container, you add a new writable layer on top of the underlying layers. This layer is often called the “container layer”. All changes made to the running container, such as writing new files, modifying existing files, and deleting files, are written to this thin writable container layer. Layers can be shared by container if they need the same usage.
+
+So if you chain commands like in the first example it will create 3 different layer, all of them could be reused by other container but it will represent 3 different layers and will took more place. In the second example it will be only one layer with all the information. So if other container want to take this layer they need to have the exact same line in the Dockerfile.
+
+`Squashing` image mean that you take all layer of a running container and with them you make only on custom layer. [Here there is an explanation and a tool](http://jasonwilder.com/blog/2014/08/19/squashing-docker-images/)
+
+`Flattening` a container mean that we are going to "hide" all the layer in one. For example if in the Dockerfile have secret as environment variable it will be easy to get that specific layer (with it ID) and to get secrets. So we are going to export and import the container. In fact when we export a container it will lost his history so it won't be possible to brows his layer history. [More info here](https://medium.com/@l10nn/flattening-docker-images-bafb849912ff) [and here](https://tuhrig.de/flatten-a-docker-container-or-image/)
+
+> 2. Propose a different approach to architecture our images to be able
+>    to reuse as much as possible what we have done. Your proposition
+>    should also try to avoid as much as possible repetitions between
+>    your images.
+
+The idea would be to make as more as possible the same layer in all containers. For that we should make same commands in the Dockerfiles. For example if all containers need to install common package we will make one command that install these packages. We could also make a custom images with Serf and s6 installed by default and then make custom commands in Dockerfiles (squashing).
+
+> 3. Provide the `/tmp/haproxy.cfg` file generated in the `ha` container
+>    after each step.  Place the output into the `logs` folder like you
+>    already did for the Docker logs in the previous tasks. Three files
+>    are expected.
+>
+>    In addition, provide a log file containing the output of the 
+>    `docker ps` console and another file (per container) with
+>    `docker inspect <container>`. Four files are expected.
+
+[haproxy.cfg after ha join](../logs/task4/ha_1)
+
+[haproxy.cfg after s1 join](../logs/task4/ha_2)
+
+[haproxy.cfg after hs2 join](../logs/task4/ha_3)
+
+[docker ps](../logs/task4/docker_ps)
+
+[docker inspect ha](../logs/task4/inspect_ha)
+
+[docker inspect s1](../logs/task4/inspect_s1)
+
+[docker inspect s2](../logs/task4/inspect_s2)
+
+We can see that we have the "history" of who join the cluster. Note it would be better in the command that write in this file to happen result instead of overwriting it. 
+
+> 4. Based on the three output files you have collected, what can you
+>    say about the way we generate it? What is the problem if any?
+
+One problem is that, as we said before, we overwrite the file instead of happen to it. An other problem is that we didn't get the information about a node leaving the cluster, we should do the same in the script for a leaving node. 
 
 
-### <a name="task-4"></a>Task 4: Use a template engine to easily generate configuration files
-
-> We have to generate a new configuration file for the load balancer each time 
-  a web server is added or removed. There are several ways to do this. Here we 
-  choose to go the way of templates. In this task we will put in place a
-  template engine and use it with a basic example. You will not become an expert
-  in template engines but it will give you a taste of how to apply this technique
-  which is often used in other contexts (like web templates, mail templates, ...).
-  We will be able to solve the issue raised in [M6](#M6).
-
-There are several ways to generate a configuration file from variables
-in a dynamic fashion. In this lab we decided to use `NodeJS` and
-`Handlebars` for the template engine.
-
-According to Wikipedia:
-
-  > A template engine is a software designed to combine one or more templates
-    with a data model to produce one or more result documents
-
-In our case our template is the `HAProxy` configuration file in which
-we put placeholders written in the template language. Our data model
-is the data provided by the handler scripts of `Serf`. And the
-resulting document coming out of the template engine is a
-configuration file that HA proxy can understand where the placeholders
-have been replaced with the data.
-
-**References**:
-
-  - [NodeJS](https://nodejs.org/en/)
-  - [Handlebars](http://handlebarsjs.com/)
-  - [Template Engine definition](https://en.wikipedia.org/wiki/Template_processor)
-
-To be able to use `Handlebars` as a template engine in our `ha`
-container, we need to install `NodeJS` and `Handlebars`.
-
-To install `NodeJS`, just replace `TODO: [HB] Install NodeJS` by the
-following content:
-
-```
-# Install NodeJS
-RUN curl -sSLo /tmp/node.tar.xz https://nodejs.org/dist/v4.4.4/node-v4.4.4-linux-x64.tar.xz \
-  && tar -C /usr/local --strip-components 1 -xf /tmp/node.tar.xz \
-  && rm -f /tmp/node.tar.xz
-```
-
-We also need to update the base tools installed in the image to be
-able to extract the `NodeJS` archive. So we need to add `xz-utils` to
-the `apt-get install` present above the line `TODO: [HB] Update to
-install required tool to install NodeJS`.
-
-**Remarks**:
-
-  - You probably noticed that we have the webapp image with a `NodeJS`
-    application.  So the image already contains `NodeJS`. We have
-    based our backend image on an existing image that provides an
-    installation of `NodeJS`. In our `ha` image, we take a shortcut
-    and do a manual installation of `NodeJS`.
-
-    This manual install has at least one bad practice: In the original
-    image of `NodeJS` they download of the required files and then
-    check the downloads against a `GPG` signatures. We have skipped
-    this part in our `ha`image, but in practice you should check every
-    download to avoid issues like the `man in the middle` attack.
-
-    You can take a look at the following links if you are interested
-    in this topic:
-
-      - [NodeJS official Dockerfile](https://github.com/nodejs/docker-node/blob/ae9e2d4f04a0fa82261df86fd9556a76cefc020d/6.3/wheezy/Dockerfile#L4-L26)
-      - [GPG](https://en.wikipedia.org/wiki/GNU_Privacy_Guard)
-      - [Man in the middle attack](https://en.wikipedia.org/wiki/Man-in-the-middle_attack)
-
-    The other reason why we have to manually install `NodeJS` is that
-    we cannot inherit from two images at the same time. As in our `ha`
-    image we already inherit `FROM` the `haproxy` official image we
-    cannot use the `NodeJS` image at the same time.
-
-    In fact, the `FROM` instruction from Docker works like the Java
-    inheritance model. You can inherit only from one super class at a
-    time. For example, we have the following hierarchy for our HAProxy
-    image.
-
-    <a href="https://github.com/SoftEng-HEIGVD/Teaching-HEIGVD-AIT-2016-Labo-Docker/blob/master/assets/img/image-hierarchy.png">
-      <img src="https://github.com/SoftEng-HEIGVD/Teaching-HEIGVD-AIT-2016-Labo-Docker/raw/master/assets/img/image-hierarchy.png" alt="HAProxy Image Hierarchy" width="600">
-    </a>
-
-    Here is the reference to the Docker documentation of the `FROM` command:
-
-      - [FROM](https://docs.docker.com/engine/reference/builder/#/from)
-
-It's time to install `Handlebars` and a small command line tool
-`handlebars-cmd` to make it work properly. For that replace the `TODO:
-[HB] Install Handlebars and cli` by this Docker instruction:
-
-```
-# Install the handlebars-cmd node module and its dependencies
-RUN npm install -g handlebars-cmd
-```
-
-**Remarks**:
-
-  - [NPM](http://npmjs.org/) is a package manager for `NodeJS`. Like
-    other package managers, one of its tasks is to manage the
-    dependencies of a package. That's the reason why we have to
-    install only `handlebars-cmd`. This package has the `handlebars`
-    package as one of its dependencies.
-
-Now we will update the handler scripts to use `Handlebars`. For the moment, we
-will just play with a simple template. So, first create a file in `ha/config` called
-`haproxy.cfg.hb` with a simple template content. Use the following command for that:
-
-```bash
-echo "Container {{ name }} has joined the Serf cluster with the following IP address: {{ ip }}" >> /ha/config/haproxy.cfg.hb
-```
-
-We need our template present in our `ha` image. We have to add the following
-Docker instructions for that. Let's replace `TODO: [HB] Copy the haproxy configuration template`
-in [ha/Dockerfile](ha/Dockerfile#L32) with the required stuff to:
-
-  1. Have a directory `/config`
-  2. Have the `haproxy.cfg.hb` in it
-
-Then, update the `member-join.sh` script in [ha/scripts](ha/scripts) with the following content:
-
-```bash
-#!/usr/bin/env bash
-
-echo "Member join script triggered" >> /var/log/serf.log
-
-# We iterate over stdin
-while read -a values; do
-  # We extract the hostname, the ip, the role of each line and the tags
-  HOSTNAME=${values[0]}
-  HOSTIP=${values[1]}
-  HOSTROLE=${values[2]}
-  HOSTTAGS=${values[3]}
-
-  echo "Member join event received from: $HOSTNAME with role $HOSTROLE" >> /var/log/serf.log
-
-  # Generate the output file based on the template with the parameters as input for placeholders
-  handlebars --name $HOSTNAME --ip $HOSTIP < /config/haproxy.cfg.hb > /tmp/haproxy.cfg
-done
-```
-
-<a name="ttb"></a>
-Time to build our `ha` image and run it. We will also run `s1` and `s2`. As usual, here
-are the commands to build and run our image and containers:
-
-```bash
-# Remove running containers
-docker rm -f ha s1 s2
-
-# Build the haproxy image
-cd ha
-docker build -t <imageName> .
-
-# Run the HAProxy container
-docker run -d -p 80:80 -p 1936:1936 -p 9999:9999 --network heig --name ha <imageName>
-
-# OR
-docker-compose up --build
-```
-
-**Remarks**:
-
-  - Installing a new util with `apt-get` means building the whole image again as
-    it is in our Docker file. This will take few minutes.
-
-Take the time to retrieve the output file in the `ha` container. Connect to the container:
-
-```bash
-docker exec -ti ha /bin/bash
-```
-
-and get the content from the file (**keep it for deliverables, handle it as you do for the logs**)
-
-```bash
-cat /tmp/haproxy.cfg
-```
-
-After you have inspected the generated file quit the container with `exit`.
-
-Now that we invoke the template engine from the handler script it is
-time to do an end-to-end test. Start the `s1` container, wait a bit,
-then retrieve the `haproxy.cfg` file from the `ha` container to see
-whether it saw `s1` coming up. Then do the same for `s2`:
-
-```bash
-# 1) Run the S1 container
-docker run -d --network heig --name s1 <imageName>
-
-# 2) Connect to the ha container (optional if you have another ssh session)
-docker exec -ti ha /bin/bash
-
-# 3) From the container, extract the content (keep it for deliverables)
-cat /tmp/haproxy.cfg
-
-# 4) Quit the ha container (optional if you have another ssh session)
-exit
-
-# 5) Run the S2 container
-docker run -d --network heig --name s2 <imageName>
-
-# 6) Connect to the ha container (optional if you have another ssh session)
-docker exec -ti ha /bin/bash
-
-# 7) From the container, extract the content (keep it for deliverables)
-cat /tmp/haproxy.cfg
-
-# 8) Quit the ha container
-exit
-```
+### Task 5: Generate a new load balancer configuration when membership changes
 
 **Deliverables**:
 
-1. You probably noticed when we added `xz-utils`, we have to rebuild
-   the whole image which took some time. What can we do to mitigate
-   that? Take a look at the Docker documentation on
-   [image layers](https://docs.docker.com/engine/userguide/storagedriver/imagesandcontainers/#images-and-layers).
-   Tell us about the pros and cons to merge as much as possible of the
-   command. In other words, compare:
+> 1. Provide the file `/usr/local/etc/haproxy/haproxy.cfg` generated in
+>    the `ha` container after each step. Three files are expected.
+>
+>    In addition, provide a log file containing the output of the 
+>    `docker ps` console and another file (per container) with
+>    `docker inspect <container>`. Four files are expected.
 
-  ```
-  RUN command 1
-  RUN command 2
-  RUN command 3
-  ```
+[haproxy.cfg after ha join](../logs/task5/ha_1)
 
-  vs.
+[haproxy.cfg after s1 join](../logs/task5/ha_2)
 
-  ```
-  RUN command 1 && command 2 && command 3
-  ```
+[haproxy.cfg after s2 join](../logs/task5/ha_3)
 
-  There are also some articles about techniques to reduce the image
-  size. Try to find them. They are talking about `squashing` or
-  `flattening` images.
+[docker ps](../logs/task5/docker_ps)
 
-2. Propose a different approach to architecture our images to be able
-   to reuse as much as possible what we have done. Your proposition
-   should also try to avoid as much as possible repetitions between
-   your images.
+[docker inspect ha](../logs/task5/inspect_ha)
 
-3. Provide the `/tmp/haproxy.cfg` file generated in the `ha` container
-   after each step.  Place the output into the `logs` folder like you
-   already did for the Docker logs in the previous tasks. Three files
-   are expected.
-   
-   In addition, provide a log file containing the output of the 
-   `docker ps` console and another file (per container) with
-   `docker inspect <container>`. Four files are expected.
-   
-4. Based on the three output files you have collected, what can you
-   say about the way we generate it? What is the problem if any?
+[docker inspect s1](../logs/task5/inspect_s1)
 
+[docker inspect s2](../logs/task5/inspect_s2)
 
-### <a name="task-5"></a>Task 5: Generate a new load balancer configuration when membership changes
+> 2. Provide the list of files from the `/nodes` folder inside the `ha` container.
+>    One file expected with the command output.
 
-> We now have S6 and Serf ready in our HAProxy image. We have member
-  join/leave handler scripts and we have the handlebars template
-  engine. So we have all the pieces ready to generate the HAProxy
-  configuration dynamically. We will update our handler scripts to
-  manage the list of nodes and to generate the HAProxy configuration
-  each time the cluster has a member leave/join event.  The work in
-  this task will let us solve the problem mentioned in [M4](#M4).
+[liste /nodes](../logs/task5/ls_node)
 
-At this stage, we have:
+> 3. Provide the configuration file after you stopped one container and
+>    the list of nodes present in the `/nodes` folder. One file expected
+>    with the command output. Two files are expected.
+>
+>    In addition, provide a log file containing the output of the 
+>    `docker ps` console. One file expected.
 
-  - Two images with `S6` process supervisor that starts a Serf agent
-    and an "application" (HAProxy or Node web app).
+[haproxy.cfg after removing on backend](../logs/task5/config_after_removing_one_container)
 
-  - The `ha` image contains the required stuff to react to `Serf`
-    events when a container joins or leaves the `Serf` cluster.
+[liste /nodes](../logs/task5/ls_node_after_removing_one)
 
-  - A template engine in the `ha` image is ready to be used to
-    generate the HAProxy configuration file.
+[docker ps after removing one backend](../logs/task5/docker_ps_after_removing_one_container)
 
-Now, we need to refine our `join` and `leave` scripts to generate a
-proper HAProxy configuration file.
+> 4. (Optional:) Propose a different approach to manage the list of backend
+>    nodes. You do not need to implement it. You can also propose your
+>    own tools or the ones you discovered online. In that case, do not
+>    forget to cite your references.
 
-First, we will copy/paste the content of the
-[ha/config/haproxy.cfg](ha/config/haproxy.cfg) file into the template
-[ha/config/haproxy.cfg.hb](ha/config/haproxy.cfg.hb). You can simply
-run the following command:
+We could use [Traefic](https://docs.traefik.io/) for the reverse proxy. It will replace the Serf cluser and match the docker idea of one container for one service. [Portainer](https://www.portainer.io/) could be use to manager containers
 
-```bash
-cp ha/config/haproxy.cfg ha/config/haproxy.cfg.hb
-```
-
-Then we will replace the content between `# HANDLEBARS START` and
-`# HANDLEBARS STOP` by the following content:
-
-```
-{{#each addresses}}
-server {{ host }} {{ ip }}:3000 check
-{{/each}}
-```
-
-**Remarks**:
-
-  - `each` iterates over a collection of data
-
-  - `{{` and `}}` are the bars that will be interpreted by `handlebars`
-
-  - `host` and `ip` are the data contained in the JSON format of the collection
-    that handlebars will receive. We will see that right after in the `member-join.sh`
-    script. The JSON format will be: `{ "host": "<hostname>", "ip": "<ip address>" }`.
-
-Our configuration template is ready. Let's update the `member-join.sh` script to
-generate the correct configuration.
-
-The mechanism to manage the `join` and `leave` events is the following:
-
-  1. We check if the event comes from a backend node (the role is used).
-
-  2. We create a file with the hostname and IP address of each backend
-     node that joins the cluster.
-
-  3. We build the `handlebars` command to generate the new configuration from the list
-     of files that represent our backend nodes
-
-The same logic also applies when a node leaves the cluster. In this
-case, the second step will remove the file with the node data.
-
-In the file [ha/scripts/member-join.sh](ha/scripts/member-join.sh)
-replace the whole content by the following one. Take the time to read the comments.
-
-```bash
-#!/usr/bin/env bash
-
-echo "Member join script triggered" >> /var/log/serf.log
-
-BACKEND_REGISTERED=false
-
-# We iterate over stdin
-while read -a values; do
-  # We extract the hostname, the ip, the role of each line and the tags
-  HOSTNAME=${values[0]}
-  HOSTIP=${values[1]}
-  HOSTROLE=${values[2]}
-  HOSTTAGS=${values[3]}
-
-  # We only register the backend nodes
-  if [[ "$HOSTROLE" == "backend" ]]; then
-    echo "Member join event received from: $HOSTNAME with role $HOSTROLE" >> /var/log/serf.log
-
-    # We simply register the backend IP and hostname in a file in /nodes
-    # with the hostname for the file name
-    echo "$HOSTNAME $HOSTIP" > /nodes/$HOSTNAME
-
-    # We have at least one new node registered
-    BACKEND_REGISTERED=true
-  fi
-done
-
-# We only update the HAProxy configuration if we have at least one new  backend node
-if [[ "$BACKEND_REGISTERED" = true ]]; then
-  # To build the collection of nodes
-  HOSTS=""
-
-  # We iterate over each backend node registered
-  for hostfile in $(ls /nodes); do
-    # We convert the content of the backend node file to a JSON format: { "host": "<hostname>", "ip": "<ip address>" }
-    CURRENT_HOST=`cat /nodes/$hostfile | awk '{ print "{\"host\":\"" $1 "\",\"ip\":\"" $2 "\"}" }'`
-
-    # We concatenate each host
-    HOSTS="$HOSTS$CURRENT_HOST,"
-  done
-
-  # We process the template with handlebars. The sed command will simply remove the
-  # trailing comma from the hosts list.
-  handlebars --addresses "[$(echo $HOSTS | sed s/,$//)]" < /config/haproxy.cfg.hb > /usr/local/etc/haproxy/haproxy.cfg
-
-  # TODO: [CFG] Add the command to restart HAProxy
-fi
-```
-
-And here we go for the `member-leave.sh` script. The script differs only for the part where
-we remove the backend nodes registered via the `member-join.sh`.
-
-```bash
-#!/usr/bin/env bash
-
-echo "Member leave/join script triggered" >> /var/log/serf.log
-
-BACKEND_UNREGISTERED=false
-
-# We iterate over stdin
-while read -a values; do
-  # We extract the hostname, the ip, the role of each line and the tags
-  HOSTNAME=${values[0]}
-  HOSTIP=${values[1]}
-  HOSTROLE=${values[2]}
-  HOSTTAGS=${values[3]}
-
-  # We only remove the backend nodes
-  if [[ "$HOSTROLE" == "backend" ]]; then
-    echo "Member $SERF_EVENT event received from: $HOSTNAME with role $HOSTROLE" >> /var/log/serf.log
-
-    # We simply remove the file that was used to track the registered node
-    rm /nodes/$HOSTNAME
-
-    # We have at least one new node that leave the cluster
-    BACKEND_UNREGISTERED=true
-  fi
-done
-
-# We only update the HAProxy configuration if we have at least a backend that
-# left the cluster. The process to generate the HAProxy configuration is the
-# same than for the member-join script.
-if [[ "$BACKEND_UNREGISTERED" = true ]]; then
-  # To build the collection of nodes
-  HOSTS=""
-
-  # We iterate over each backend node registered
-  for hostfile in $(ls /nodes); do
-    # We convert the content of the backend node file to a JSON format: { "host": "<hostname>", "ip": "<ip address>" }
-    CURRENT_HOST=`cat /nodes/$hostfile | awk '{ print "{\"host\":\"" $1 "\",\"ip\":\"" $2 "\"}" }'`
-
-    # We concatenate each host
-    HOSTS="$HOSTS$CURRENT_HOST,"
-  done
-
-  # We process the template with handlebars. The sed command will simply remove the
-  # trailing comma from the hosts list.
-  handlebars --addresses "[$(echo $HOSTS | sed s/,$//)]" < /config/haproxy.cfg.hb > /usr/local/etc/haproxy/haproxy.cfg
-
-  # TODO: [CFG] Add the command to restart HAProxy
-fi
-```
-
-**Remarks**:
-
-  - The way we keep track the backend nodes is pretty simple and makes
-    the assumption there is no concurrency issue with `Serf`. That's
-    reasonable enough to get a quite simple solution.
-
-**Cleanup**:
-
-  - In the main configuration file that is used for bootstrapping
-    HAProxy the first time when there are no backend nodes, we have
-    the list of servers that we used in the first task and the
-    previous lab. We can remove the list. So find `TODO: [CFG] Remove
-    all the servers` and remove the list of nodes.
-
-  - In [ha/services/ha/run](ha/services/ha/run), we can remove the two lines
-    above `TODO: [CFG] Remove the following two lines`.
-
-We need to make sure the image has the folder `/nodes` created. In the
-Docker file, replace the `TODO: [CFG] Create the nodes folder` by the
-correct instruction to create the `/nodes` folder.
-
-We are ready to build and test our `ha` image. Let's proceed like in
-the [previous task](#ttb).  You should provide the same outputs for
-the deliverables. Remember that we have moved the file
-`/tmp/haproxy.cfg` to `/usr/local/etc/haproxy/haproxy.cfg` (**keep
-track of the config file like in previous step and also the output of
-`docker ps` and `docker inspect <container>`**).
-
-You can also get the list of registered nodes from inside the `ha`
-container. Simply list the files from the directory `/nodes`.  (**keep
-track of the output of the command like the logs in previous tasks**)
-
-Now, use the Docker commands to stop `s1`.
-
-You can connect again to the `ha` container and get the haproxy
-configuration file and also the list of backend nodes. Use the
-previous command to reach this goal.  (**keep track of the output of
-the ls command and the configuration file like the logs in previous
-tasks**)
+### Task 6: Make the load balancer automatically reload the new configuration
 
 **Deliverables**:
 
-1. Provide the file `/usr/local/etc/haproxy/haproxy.cfg` generated in
-   the `ha` container after each step. Three files are expected.
-   
-   In addition, provide a log file containing the output of the 
-   `docker ps` console and another file (per container) with
-   `docker inspect <container>`. Four files are expected.
-
-2. Provide the list of files from the `/nodes` folder inside the `ha` container.
-   One file expected with the command output.
-
-3. Provide the configuration file after you stopped one container and
-   the list of nodes present in the `/nodes` folder. One file expected
-   with the command output. Two files are expected.
-   
-    In addition, provide a log file containing the output of the 
-   `docker ps` console. One file expected.
-
-4. (Optional:) Propose a different approach to manage the list of backend
-   nodes. You do not need to implement it. You can also propose your
-   own tools or the ones you discovered online. In that case, do not
-   forget to cite your references.
-
-### <a name="task-6"></a>Task 6: Make the load balancer automatically reload the new configuration
-
-> Finally, we have all the pieces in place to finish our
-  solution. HAProxy will be reconfigured automatically when web app
-  nodes are leaving/joining the cluster. We will solve the problems
-  you have discussed in [M1 - 3](#M1).  Again, the solution built
-  in this lab is only one example of tools and techniques we can use to
-  solve this kind of situation. There are several other ways.
-
-The only thing missing now is to make sure the configuration of
-HAProxy is up-to-date and taken into account by HAProxy.
-
-We will try to make HAProxy reload his config with minimal
-downtime. At the moment, we will replace the line `TODO: [CFG] Replace
-this command` in [ha/services/ha/run](ha/services/ha/run) by the
-following script part. As usual, take the time to read the comments.
-
-```bash
-#!/usr/bin/with-contenv bash
-
-# ##############################################################################
-# WARNING
-# ##############################################################################
-# S6 expects the processes it manages to stop when it sends them a SIGTERM signal.
-# The Serf agent does not stop properly when receiving a SIGTERM signal.
-#
-# Therefore, we need to do some tricks to remedy the situation. We need to
-# "simulate" the handling of SIGTERM in the script and send to Serf the signal
-# that makes it quit (SIGINT).
-#
-# Basically we need to do the following:
-# 1. Keep track of the process id (PID) of Serf Agent
-# 2. Catch the SIGTERM from S6 and send a SIGINT to Serf
-# 3. Make sure this shell script will not stop before S6 stops it, but when
-#    SIGTERM is sent, we need to stop everything.
-
-# Get the current process ID to avoid killing an unwanted process
-pid=$$
-
-# Define a function to kill the Serf process as Serf does not accept SIGTERM. In
-# place, we will send a SIGINT signal to the process to stop it correctly.
-sigterm() {
-  kill -USR1 $pid
-}
-
-# Trap the SIGTERM and in place run the function that will kill the process
-trap sigterm SIGTERM
-
-# We need to keep track of the PID of HAProxy in a file for the restart process.
-# We are forced to do that because the blocking process for S6 is this shell
-# script. When we send to S6 a command to restart our process, we will lose
-# the value of the variable pid. The pid variable will stay alive until any
-# restart or stop from S6.
-#
-# In the case of a restart we need to keep the HAProxy PID to give it back to
-# HAProxy. The comments on the HAProxy command will complete this exaplanation.
-if [ -f /var/run/haproxy.pid ]; then
-    HANDOFFPID=`cat /var/run/haproxy.pid`
-fi
-
-# To kill an old HAProxy and start a new one with minimal outage 
-# HAProxy provides the -sf/-st command-line options. With these options 
-# one can give the PIDs of currently running HAProxy processes at startup.
-# This will start new HAProxy processes and when startup is complete
-# it send FINISH or TERMINATE signals to the ones given in the argument. 
-#
-# The HANDOFFPID keeps track of the PID of HAProxy. We retrieve it from the
-# the file we written the last time we (re)started HAProxy.
-exec haproxy -f /usr/local/etc/haproxy/haproxy.cfg -sf $HANDOFFPID &
-
-# Retrieve the process ID of the command run in background. Doing that, we will
-# be able to send the SIGINT signal through the sigterm function we defined
-# to replace the SIGTERM.
-pid=$!
-
-# And write it to a file to get it on next restart
-echo $pid > /var/run/haproxy.pid
-
-# Finally, we wait as S6 launches this shell script. This will simulate
-# a foreground process for S6. All that tricky stuff is required because
-# we use a process supervisor in a Docker environment. The applications need
-# to be adapted for such environments.
-wait
-```
-
-**Remarks**:
-
-  - In this lab, we do not achieve an HAProxy restart with _zero_
-    downtime. You will find an article about that in the references.
-
-**References**:
-
-  - [Stopping HAProxy](http://cbonte.github.io/haproxy-dconv/1.6/management.html#4)
-  - [Sending signal to Processes](https://bash.cyberciti.biz/guide/Sending_signal_to_Processes)
-  - [Zero downtime with HAProxy article](http://engineeringblog.yelp.com/2015/04/true-zero-downtime-haproxy-reloads.html)
-
-We need to update our `member-join` and `member-leave` scripts to make sure HAProxy
-will be restarted when its configuration is modified. For that, in both files, replace
-`TODO: [CFG] Add the command to restart HAProxy` by the following command.
-
-```bash
-# Send a SIGHUP to the process. It will restart HAProxy
-s6-svc -h /var/run/s6/services/ha
-```
-
-**References**:
-
-  - [S6 svc doc](http://skarnet.org/software/s6/s6-svc.html)
-
-It's time to build and run our images. At this stage, if you try to reach
-`http://192.168.42.42`, it will not work. No surprise as we do not start any
-backend node. Let's start one container and try to reach the same URL.
-
-You can start the web application nodes. If everything works well, you could
-reach your backend application through the load balancer.
-
-And now you can start and stop any number of nodes you want! You will
-see the dynamic reconfiguration occurring. Keep in mind that HAProxy
-will take few seconds before nodes will be available. The reason is
-that HAProxy is not so quick to restart inside the container and your
-web application is also taking time to bootstrap. And finally,
-depending of the health checks of HAProxy, your web app will not be
-available instantly.
-
-Finally, we achieved our goal to build an architecture that is dynamic
-and reacts to nodes coming and going!
-
-![Final architecture](assets/img/Lab4_schemaSerf.png)
-
-**Deliverables**:
-
-1. Take a screenshots of the HAProxy stat page showing more than 2 web
-   applications running. Additional screenshots are welcome to see a
-   sequence of experimentations like shutting down a node and starting
-   more nodes.
-   
-   Also provide the output of `docker ps` in a log file. At least 
-   one file is expected. You can provide one output per step of your
-   experimentation according to your screenshots.
-   
-2. Give your own feelings about the final solution. Propose
-   improvements or ways to do the things differently. If any, provide
-   references to your readings for the improvements.
-
-3. (Optional:) Present a live demo where you add and remove a backend container.
+> 1. Take a screenshots of the HAProxy stat page showing more than 2 web
+>    applications running. Additional screenshots are welcome to see a
+>    sequence of experimentations like shutting down a node and starting
+>    more nodes.
+>
+>    Also provide the output of `docker ps` in a log file. At least 
+>    one file is expected. You can provide one output per step of your
+>    experimentation according to your screenshots.
 
 
-## Windows troubleshooting
 
-It appears that Windows users can encounter a `CRLF` vs. `LF` problem when the repos is cloned without taking care of the ending lines. Therefore, if the ending lines are `CRFL`, it will produce an error message with Docker: 
+> 2. Give your own feelings about the final solution. Propose
+>    improvements or ways to do the things differently. If any, provide
+>    references to your readings for the improvements.
 
-```bash
-... no such file or directory
-```
+This final solution is fine but not very good. Indeed we have the problem that if all backend nodes fail there is no mecanisme to redeploy them automaticaly. To do that a solution would be to set a number of wanted backend component and on each "leaving cluster" event we look if we vace less backend component than ou setted value. If we have less container than expecter we run a script that will redeploy N container to match the setted value.
 
-(Take a look to this Docker issue: https://github.com/docker/docker/issues/9066, the last post show the error message).
+An other problem is that the reverse proxy is an "one point of failure", that mean that if the reverse proxy container is down everything will fail. To avoid this, a solution would be to have multiple reverse proxy container that share a Virual IP. The virtual IP would be the entry point and there is a active reverse proxy container and others are passivs. If the active reverse proxy fail an passive one become the active.
 
-The error message is not really relevant and difficult to troubleshoot. It seems the problem is caused by the line endings not correctly interpreted by Linux when they are `CRLF` in place of `LF`. The problem is caused by cloning the repos on Windows with a system that will not keep the `LF` in the files.
+![](ha-diagram-animated.gif)
 
-Fortunatelly, there is a procedure to fix the `CRLF` to `LF` and then be sure Docker will recognize the `*.sh` files.
+[More information about VIP config](https://www.digitalocean.com/community/tutorials/how-to-set-up-highly-available-haproxy-servers-with-keepalived-and-floating-ips-on-ubuntu-14-04)
 
-First, you need to add the file `.gitattributes` file with the following content:
+> 3. (Optional:) Present a live demo where you add and remove a backend container.
 
-```bash
-* text eol=lf
-```
+To add and remove backend containers we simply have to run the command `docker-compose -f docker-compose-scale.yml up --scale webapp=N` where N is the **total** number of backend containers that we want. There are 2 videos to demonstrate.
 
-This will ask the repos to force the ending lines to `LF` for every text files.
+#### Add containers
 
-Then, you need to reset your repository. Be sure you do not have **modified** files.
+![](add_webapp.gif)
 
-```bash
-# Erease all the files in your local repository
-git rm --cached -r .
+#### Remove containers
 
-# Restore the files from your local repository and apply the correct ending lines (LF)
-git reset --hard
-```
+![](remove.gif)
 
-Then, you are ready to go.
 
-There is a link to deeper explanation and procedure about the ending lines written by GitHub: https://help.github.com/articles/dealing-with-line-endings/
 
 ### Difficulties
-
-..
 
 ### Conclusion
 
