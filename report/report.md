@@ -359,7 +359,7 @@ Another problem is that the reverse proxy is a one point of failure. This means 
 
 To avoid this, a solution would be to have multiple reverse proxy containers sharing the same virtual IP. The virtual IP would be the entry point, forwarding requests to one active reverse proxy container. The others would be passive. In case of failure of the active reverse proxy, a passive one would become the new active one.
 
-![](ha-diagram-animated.gif)
+![](../img/ha-diagram-animated.gif)
 
 More information about Virtual IP configuration [here](https://www.digitalocean.com/community/tutorials/how-to-set-up-highly-available-haproxy-servers-with-keepalived-and-floating-ips-on-ubuntu-14-04).
 
@@ -375,11 +375,11 @@ where N is the **total** number of backend containers that we want. Below are tw
 
 #### Add containers
 
-![](add_webapp.gif)
+![](../img/add_webapp.gif)
 
 #### Remove containers
 
-![](remove.gif)
+![](../img/remove.gif)
 
 
 
