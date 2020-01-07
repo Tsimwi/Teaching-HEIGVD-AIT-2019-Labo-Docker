@@ -6,7 +6,7 @@ services :
          context: ./webapp
          dockerfile: Dockerfile
        networks:
-         - heig
+         - heig2
 
   haproxy:
        container_name: ha
@@ -22,11 +22,11 @@ services :
          - 1936
          - 9999
        networks:
-         heig:
+         heig2:
            ipv4_address: ${HA_PROXY_IP}
 networks:
-    heig:
-        name: heig
+    heig2:
+        name: heig2
         driver: bridge
         ipam:
             driver: default
